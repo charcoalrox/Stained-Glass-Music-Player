@@ -48,7 +48,7 @@ class PlaylistViewerWindow(QWidget):
         self.setWindowTitle("Playlist view") # TODO: Set this to the playlist name
 
         self.playlistDescription = QLabel()
-        self.playlistDescription.setText("Test")
+        self.playlistDescription.setText(" ")
         layout.addWidget(self.playlistDescription)
 
         self.songsListWidget = QListWidget()
@@ -64,6 +64,17 @@ class PlaylistViewerWindow(QWidget):
 
     def prep_Window(self):
         self.setWindowTitle(self.selectedPlaylist.text()[:-5])  #TODO: Scrape off file extension
+
+        fileName = (playlistsPath + "//" + self.selectedPlaylist.text())
+        with open(fileName, "r", encoding='utf-8', errors='ignore') as f:
+            for x in f: 
+                if x[0] == '#' and x[1] == '#' and x[2] == '#': # Set playlist description if present
+                    self.playlistDescription.setText(x[3:])
+                elif x[0] == '#' or x[0] == '\n': # ignore blank lines and comments
+                    pass
+                else: # Display remaining files that contain a file extension
+                    self.songsListWidget.addItem(x[3:].strip())
+        f.close()
 
     def play_song(self):
         print("This will do something eventually")
