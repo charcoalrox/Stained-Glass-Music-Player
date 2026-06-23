@@ -2,7 +2,6 @@
 ### scan all m3u and m3u8 files in a directory. Clean contents, remove duplicates, reformat all files to type .m3u8 (better compatibility)
 ### Makes playlists run on my computer and my phone more easily
 
-import collections
 import os
 
 # Clean file contents and add them to an array for further modification
@@ -20,14 +19,14 @@ def initializeFileAsArray(fileName, fileContentsArray):
         for x in f: 
             if x[0] == '#' or x[0] == '\n': # ignore blank lines and comments
                 pass
-            elif x[0] != '.' and x[1] != '.': # Check if a line contains a vague filepath (usable on pc and phone)
-                splitStringArray = x.split('\\')
+            elif x[0] != '.' and x[1] != '.': # Check if a line contains a non-local filepath
+                splitStringArray = x.split('\\') # Convert file path to local
                 if len(splitStringArray) > 1:
-                    newPath = "..\\{0}".format(splitStringArray[len(splitStringArray) - 1])
+                    newPath = "..\\{0}".format(splitStringArray[len(splitStringArray) - 1]) 
                     fileContentsArray.append(newPath)
-                else:  # ignore lines containing text that are not a filepath
+                else:
                     pass
-            else: # add valid filepaths to playist
+            else: # add valid filepaths to array
                 fileContentsArray.append(x)
 
     return fileContentsArray
@@ -45,7 +44,6 @@ def RemoveDuplicates(fileContentsArray):
 
 
 def cleanFiles(filepath):
-
     fileNames = [] # all playlists in current directory
     currentFileContents = [] # contents of currently loaded file
 
@@ -70,7 +68,7 @@ def cleanFiles(filepath):
             for contents in currentFileContents:
                 f.write(contents)
 
-    print("Files have been processed")
+    # print("Files have been processed")
 
-if __name__ == "__main__":
-    cleanFiles("C:\\Users\\payto\\OneDrive\\Desktop\\Music Project\\Playlists")
+# if __name__ == "__main__":
+#     cleanFiles("C:\\Users\\payto\\OneDrive\\Desktop\\Music Project\\Playlists")
