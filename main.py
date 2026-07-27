@@ -20,6 +20,7 @@ from PyQt5.QtCore import Qt
 # TODO: Refresh open playlist whenever a song is added to a playlist from any window. This is my biggest gripe with WMP if we don't fix it then what was the point?
 # TODO: Relative paths mean I need a constant CWD. Either make paths global or find a way to ensure the cwd is always the dir containing main when this program is run or it will fail
 # TODO: Flag relevant lists as either select one or select all and change how I access their contents
+# TODO: PlaylistScrubber deletes descriptions and ruins the playlist titles. Turns em into paths
 
 pathListPath = "C:\\Users\\payto\\OneDrive\\Desktop\\Music Project\\Stained-Glass-Music-Player\\paths.json" # One hard-coded path to avoid many more hard-coded paths
 songspath = ""
@@ -139,6 +140,77 @@ class metadata_window(QWidget):
         self.selectedSong = None # Song selected when this window is open
 
 
+# Display metadata for song and allow user to change any metadata they want to
+class playlistEditorWindow(QWidget): 
+    def __init__(self):
+        super().__init__()
+
+        layout = QVBoxLayout()
+        self.setWindowTitle("Edit Playlist Data")
+
+        self.nameTitle = QLabel()
+        self.nameTitle.setText("Playlist Name: ")
+        self.newName = QLineEdit()
+        layout.addWidget(self.nameTitle)
+        layout.addWidget(self.newName)
+
+        self.DescTitle = QLabel()
+        self.DescTitle.setText("Playlist Description: ")
+        self.newDesc = QLineEdit()
+        layout.addWidget(self.DescTitle)
+        layout.addWidget(self.newDesc)
+
+        self.button = QPushButton("Submit")
+        layout.addWidget(self.button)
+        self.button.clicked.connect(self.create_playlist)
+
+        self.setLayout(layout)
+
+        self.parent_window = None
+        self.selectedPlaylist = None # Song selected when this window is open
+        self.playlistToDelete = None
+
+    def create_playlist(self):
+        title_text = self.newName.text().strip() # .strip makes sure blank spaces alone don't count as a title
+        desc_text = self.newDesc.text().strip().replace("\r", "").replace("\n", "")
+        filePath = f"{playlistsPath}//{title_text}.m3u8"
+        file_data = ""
+
+        # create a file if the title is valid
+        if title_text and re.fullmatch(r'[a-zA-Z0-9 ]+', title_text):
+
+            # Check if file is real, Copy data if yes
+            if os.path.exists(filePath):
+                with open(filePath, "r") as f:
+                    file_data = f.read()
+
+            # Delete old playlist before creating new one
+            if self.playlistToDelete is not None and os.path.exists(f"{playlistsPath}//{self.playlistToDelete.text()}"):
+                self.parent_window.delete_playlist(self.playlistToDelete)
+
+            # Write file with provided data from LineEdit elems
+            with open(f"{playlistsPath}//{title_text}.m3u8", "w") as f:
+                f.write("#EXTM3U\n")
+                f.write(f"#{title_text}\n")
+
+                if desc_text:
+                    f.write(f"###{desc_text} \n")
+
+                if file_data != "":
+                    for line in file_data.splitlines():
+                        if not line.startswith('#'):
+                            f.write(line + '\n')
+
+            # Automatically close window after editing (if editing existing playlist). Solves issues with path errors after initial edit finishes
+            if self.playlistToDelete is not None:
+                self.close()
+
+            self.parent_window.display_playlists()
+
+        else: 
+            print("ERROR: Need an input title")
+
+
 # Default window. Displays all playlists and allows opening of other windows
 class MainWindow(QMainWindow):
 
@@ -174,6 +246,21 @@ class MainWindow(QMainWindow):
         self.button = QPushButton("Playlist Scrubber")
         self.button.clicked.connect(self.m3u_repair)
         layout.addWidget(self.button)
+        
+        # Create a new playlist here
+        self.button = QPushButton("New Playlist")
+        self.button.clicked.connect(lambda: create_new_playlist(self))
+        layout.addWidget(self.button)
+
+        # Edit Existing Playlist
+        # TODO: This should be a dropdown option
+        self.button = QPushButton("Edit Playlist")
+        self.button.clicked.connect(lambda: create_new_playlist(self, True, self.playlistList.selectedItems()))
+        layout.addWidget(self.button)
+
+        self.button = QPushButton("Delete Playlist")
+        self.button.clicked.connect(lambda: self.delete_playlist(self.playlistList.selectedItems()[0]))
+        layout.addWidget(self.button)
 
         # Enable custom context menu
         self.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -181,15 +268,20 @@ class MainWindow(QMainWindow):
             lambda position: show_right_click_menu(self, position)
         ) # Real one will edit playlist names and descriptions
 
+        # Holder vars for child windows of main
         self.fFSongsWindow = None
         self.pCSongsWindow = None
+        self.playListEditorWindow = None
         self.selectedPlaylist = None
 
     # separate window opener funcs
+
+    # display all songs not inside of a playlist
     def window_unused_songs(self, checked):
         self.fFSongsWindow = ForgottenSongsWindow()
         self.fFSongsWindow.show()
 
+    # display all songs inside of playlist
     def window_playlist_contents(self):
         print("Selected items: ", self.playlistList.selectedItems())
 
@@ -217,6 +309,14 @@ class MainWindow(QMainWindow):
         for file in os.listdir(playlistsPath):
             if file.endswith(".m3u8") or file.endswith(".m3u"):
                 self.playlistList.addItem(file)
+
+    def delete_playlist(self, playlistToDelete):
+        targetPath = f"{playlistsPath}//{playlistToDelete.text()}"
+
+        if os.path.exists(targetPath):
+            os.remove(targetPath)
+            self.display_playlists() # refresh playlists when done
+            self.selectionChanged()
 
     def closeEvent(self, event):
         for window in QApplication.topLevelWidgets():
@@ -319,34 +419,47 @@ def edit_songs_menu(self, position, selected_items):
 
 # copies all songs to a new playlist. Optionally deletes them from current playlist
 def copy_songs_to_playlist(self, output_playlist, songs, input_playlist = None):
-    fileName = (playlistsPath + "//" + output_playlist)
 
-    with open(fileName, "rb+") as f:
-        # Go to the end of the file
-        f.seek(0, os.SEEK_END)
-        pos = f.tell()
+    if output_playlist is not None: # output_playlist may be "none" if songs are just being deleted from current playlist instead of moved
+        fileName = (playlistsPath + "//" + output_playlist)
 
-        # step backwards over windows newline char returns
-        while pos > 0:
-            pos -= 1
-            f.seek(pos)
+        with open(fileName, "rb+") as f:
+            # Go to the end of the file
+            f.seek(0, os.SEEK_END)
+            pos = f.tell()
 
-            c = f.read(1)
-            if c not in (b"\r", b"\n"):
-                break
-        f.truncate(pos + 1)
+            # step backwards over windows newline char returns
+            while pos > 0:
+                pos -= 1
+                f.seek(pos)
 
-        # Make sure we're at the EOF and add all selected songs
-        f.seek(0, os.SEEK_END)
+                c = f.read(1)
+                if c not in (b"\r", b"\n"):
+                    break
+            f.truncate(pos + 1)
 
-        for song in songs:
-            f.write(f"\n..\\{song.text()}".encode("utf-8"))
+            # Make sure we're at the EOF and add all selected songs
+            f.seek(0, os.SEEK_END)
 
-        f.write(b"\n")
+            for song in songs:
+                f.write(f"\n..\\{song.text()}".encode("utf-8"))
+
+            f.write(b"\n")
     
     # Optoinally, remove selected songs from the currently opened playlist
     if input_playlist is not None:
         print("This shouldn't be possible yet, what?")
+        fileName = (playlistsPath + "//" + input_playlist)
+
+        with open (fileName, "r+") as f: # this probably won't cut it. I'm going to read this file and then overwrite it with lines missing
+            print("Stuff here later")
+            # Read over everything
+            # skip lines containing a song from the selected songs array
+            # overwrite playlist with new output no longer containing selected songs
+
+
+
+
         # I guess we iterate over each playlist element and check if they're the current song? I assume we'll have less songs than playlist items selected in most cases so this is bad but shorter
 
 # def copy_to_playlist(self, selected_items):
@@ -357,6 +470,22 @@ def copy_songs_to_playlist(self, output_playlist, songs, input_playlist = None):
 #     else: 
 #         print("ERROR: No items selected or something has gone wrong (line 313)")
 
+#generate a new playlist with it's own description
+# Global so that I can make this a dropdown menu option that also exists on basically every window
+def create_new_playlist(self, overwrite = False, selectedPlaylist = None):
+
+    self.playListEditorWindow = playlistEditorWindow()
+    self.playListEditorWindow.selectedPlaylist = self.selectedPlaylist
+    if overwrite: self.playListEditorWindow.playlistToDelete = self.selectedPlaylist
+    self.playListEditorWindow.parent_window = self
+    self.playListEditorWindow.show()
+
+    if self.selectedPlaylist is not None and overwrite == True:
+        self.playListEditorWindow.newName.setText(self.selectedPlaylist.text()[:-5])
+        with open(f"{playlistsPath}//{self.selectedPlaylist.text()}", "r") as f:
+            for line in f:
+                if line.startswith("###"):
+                    self.playListEditorWindow.newDesc.setText(line[3:])
 
 if __name__ == "__main__":
     ScanFilePaths()
