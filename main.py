@@ -21,6 +21,8 @@ from PyQt5.QtCore import Qt
 # TODO: Relative paths mean I need a constant CWD. Either make paths global or find a way to ensure the cwd is always the dir containing main when this program is run or it will fail
 # TODO: Flag relevant lists as either select one or select all and change how I access their contents
 # TODO: PlaylistScrubber deletes descriptions and ruins the playlist titles. Turns em into paths
+# TODO: Python can't open certain playlists because it's missing foreign characters. Make sure this is fixed on my computer so I can actually use this software when it's done, please "File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\encodings\cp1252.py", line 23, in decode
+                                                                                                                                                                                            #return codecs.charmap_decode(input,self.errors,decoding_table)[0]"
 
 pathListPath = "C:\\Users\\payto\\OneDrive\\Desktop\\Music Project\\Stained-Glass-Music-Player\\paths.json" # One hard-coded path to avoid many more hard-coded paths
 songspath = ""
@@ -174,18 +176,18 @@ class playlistEditorWindow(QWidget):
         title_text = self.newName.text().strip() # .strip makes sure blank spaces alone don't count as a title
         desc_text = self.newDesc.text().strip().replace("\r", "").replace("\n", "")
         filePath = f"{playlistsPath}//{title_text}.m3u8"
+        if self.playlistToDelete is not None: filePath = f"{playlistsPath}//{self.playlistToDelete.text()}"
         file_data = ""
 
         # create a file if the title is valid
-        if title_text and re.fullmatch(r'[a-zA-Z0-9 ]+', title_text):
+        if title_text:
 
             # Check if file is real, Copy data if yes
             if os.path.exists(filePath):
                 with open(filePath, "r") as f:
                     file_data = f.read()
 
-            # Delete old playlist before creating new one
-            if self.playlistToDelete is not None and os.path.exists(f"{playlistsPath}//{self.playlistToDelete.text()}"):
+            if self.playlistToDelete is not None and self.playlistToDelete.text() != f"{title_text}.m3u8" and os.path.exists(f"{playlistsPath}//{self.playlistToDelete.text()}"):
                 self.parent_window.delete_playlist(self.playlistToDelete)
 
             # Write file with provided data from LineEdit elems

@@ -10,13 +10,19 @@ def initializeFileAsArray(fileName, fileContentsArray):
     # Create metadata at top of m3u8 file
     fileContentsArray.append("#EXTM3U\n")
 
-    titleFormatter = fileName.split('.')
-    playListTitle = "#{0}\n".format(titleFormatter[0])
+    titleFormatter = fileName.split('\\')
+    # print(titleFormatter[0])
+    # # print(titleFormatter[len(titleFormatter)])
+    # print(titleFormatter[len(titleFormatter) - 1])
+    # titleFormatter = fileName.split('.')
+    playListTitle = f"#{titleFormatter[len(titleFormatter) - 1][:-5]}\n"
     fileContentsArray.append(playListTitle)
 
     # Read contents by line
     with open(fileName, "r", encoding='utf-8', errors='ignore') as f:
         for x in f: 
+            if x.startswith("###"): # Playlist Description format used in my custom playlist editor
+                fileContentsArray.append(x)
             if x[0] == '#' or x[0] == '\n': # ignore blank lines and comments
                 pass
             elif x[0] != '.' and x[1] != '.': # Check if a line contains a non-local filepath
