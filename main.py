@@ -15,12 +15,11 @@ from PyQt5.QtCore import QUrl
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMenu, QAction
 from PyQt5.QtCore import Qt
 
-# TODO: printing songs in a list is a global function usable by all classes
 # TODO: Music is played on main window. If you play music from any other function is merely passes to the main window which can kill other songs
-# TODO: Refresh open playlist whenever a song is added to a playlist from any window. This is my biggest gripe with WMP if we don't fix it then what was the point?
+    # TODO: Music should also have a slider.
+    # TODO: Songs played via songspath and not the local playlist path may perhaps be a good idea so I don't have to modify cwd every time we wanna play a song
+# TODO: Playlists can be manually refreshed. Might be cooler if it's done automatically
 # TODO: Relative paths mean I need a constant CWD. Either make paths global or find a way to ensure the cwd is always the dir containing main when this program is run or it will fail
-# TODO: Flag relevant lists as either select one or select all and change how I access their contents
-# TODO: PlaylistScrubber deletes descriptions and ruins the playlist titles. Turns em into paths
 # TODO: Python can't open certain playlists because it's missing foreign characters. Make sure this is fixed on my computer so I can actually use this software when it's done, please "File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\encodings\cp1252.py", line 23, in decode
                                                                                                                                                                                             #return codecs.charmap_decode(input,self.errors,decoding_table)[0]"
 
@@ -68,7 +67,7 @@ class PlaylistViewerWindow(QWidget):
         super().__init__()
 
         layout = QVBoxLayout()
-        self.setWindowTitle("Playlist view") # TODO: Set this to the playlist name
+        self.setWindowTitle("Playlist view")
 
         self.playlistDescription = QLabel()
         self.playlistDescription.setText(" ")
@@ -76,6 +75,7 @@ class PlaylistViewerWindow(QWidget):
 
         self.songsListWidget = QListWidget()
         layout.addWidget(self.songsListWidget)
+        self.songsListWidget.setSelectionMode(QAbstractItemView.ExtendedSelection) # Enables multi-item list selections
 
         self.button = QPushButton("Play")
         self.button.clicked.connect(self.play_song)
@@ -84,6 +84,16 @@ class PlaylistViewerWindow(QWidget):
         self.button = QPushButton("Edit Song")
         self.button.clicked.connect(self.open_metadata_editor)
         layout.addWidget(self.button)
+
+        self.button = QPushButton("Refresh")
+        self.button.clicked.connect(self.prep_Window)
+        layout.addWidget(self.button)
+
+        # Enable custom context menu
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(
+            lambda position: edit_songs_menu(self, position, self.songsListWidget.selectedItems(), self.selectedPlaylist)
+        )
 
         self.player = QMediaPlayer()
 
@@ -94,6 +104,7 @@ class PlaylistViewerWindow(QWidget):
 
     def prep_Window(self):
         self.setWindowTitle(self.selectedPlaylist.text()[:-5])  #TODO: Scrape off file extension
+        self.songsListWidget.clear()
 
         fileName = (playlistsPath + "//" + self.selectedPlaylist.text())
         with open(fileName, "r", encoding='utf-8', errors='ignore') as f:
@@ -116,6 +127,9 @@ class PlaylistViewerWindow(QWidget):
         self.mDSongsWindow = metadata_window()
         self.mDSongsWindow.selectedSong = TinyTag.get("../" + self.songsListWidget.selectedItems()[0].text())
         self.mDSongsWindow.show()
+
+    # def refresh_list(self):
+
 
 
 # Display metadata for song and allow user to change any metadata they want to
@@ -142,7 +156,7 @@ class metadata_window(QWidget):
         self.selectedSong = None # Song selected when this window is open
 
 
-# Display metadata for song and allow user to change any metadata they want to
+# change/create playlist name and description
 class playlistEditorWindow(QWidget): 
     def __init__(self):
         super().__init__()
@@ -385,10 +399,11 @@ def show_right_click_menu(self, position):
 
 
 # context menu for right clicking on songs
-def edit_songs_menu(self, position, selected_items):
+# TODO: Refresh the playlist menu when we do this
+def edit_songs_menu(self, position, selected_items, input_playlist = None):
     context_menu = QMenu(self)
 
-    # Dropdown with all playlists added to it
+    # Move songs to a new playlist without modifying an existing playlist
     action_one = QMenu("Copy song(s) to new playlist")
     for file in os.listdir(playlistsPath):
         if file.endswith(".m3u8") or file.endswith(".m3u"):
@@ -397,30 +412,38 @@ def edit_songs_menu(self, position, selected_items):
             # Connect the action to a function
             action.triggered.connect(
                 lambda checked=False, playlist=file:
-                    copy_songs_to_playlist(self, playlist, selected_items)
+                    copy_songs_to_playlist(self, selected_items, None, playlist)
             )
 
-    # This can be done by passing in a playlist name when calling this menu and then having an alternate, grayed out button when it's none (or just no button?)
-    # I'm thinking nothing
-    action_two = QAction("Move song(s) to new playlist") # grayed out in find forgotten songs, obviously
-    # action_three = QAction("Edit song data") # Modify song name and metadata. Requires refreshing all menus and checking every playlist to make sure song is updated correctly. Might be stupid and expensive
-
-    # action_one.triggered.connect(lambda: copy_to_playlist(self, selected_items))
-    action_two.triggered.connect(lambda: print("This will eventually make a dropdown such that ALL selected songs will be m"))
-
-    action_three = QAction("Remove Song(s) from Playlist") # TODO: I can use the existing function, plug "none" into the output func, and keep the input playlist for the input func to make this one work
-    action_three.triggered.connect(lambda: print("This is going to delete selected songs from current playlist without moving them somewhere new"))
-
-    # context_menu.addAction(action_one)
     context_menu.addMenu(action_one)
-    context_menu.addAction(action_two)
+
+    if input_playlist is not None: # You can only edit the contents of the opened playlist if you're inside of an opened playlist
+        # Move songs to a new playlist and remove them from the existing playlist
+        action_two = QMenu("Move song(s) to new playlist")
+        for file in os.listdir(playlistsPath):
+            if file.endswith(".m3u8") or file.endswith(".m3u"):
+                action = action_two.addAction(file)
+
+                action.triggered.connect(
+                    lambda checked = False, playlist = file:
+                        copy_songs_to_playlist(self, selected_items, input_playlist, playlist)
+                )
+
+        # remove songs from existing playlist. Do not move them anywhere
+        action_three = QAction("Remove song(s) from playlist")
+        action_three.triggered.connect(lambda: copy_songs_to_playlist(self, selected_items, input_playlist))
+
+        context_menu.addMenu(action_two)
+        context_menu.addAction(action_three)
+
 
     global_position = self.mapToGlobal(position)
     context_menu.exec_(global_position)
 
 
 # copies all songs to a new playlist. Optionally deletes them from current playlist
-def copy_songs_to_playlist(self, output_playlist, songs, input_playlist = None):
+# TODO: I don't check anywhere that the filepath is valid. Could maybe risk crashing
+def copy_songs_to_playlist(self, songs, input_playlist = None, output_playlist = None):
 
     if output_playlist is not None: # output_playlist may be "none" if songs are just being deleted from current playlist instead of moved
         fileName = (playlistsPath + "//" + output_playlist)
@@ -446,31 +469,26 @@ def copy_songs_to_playlist(self, output_playlist, songs, input_playlist = None):
             for song in songs:
                 f.write(f"\n..\\{song.text()}".encode("utf-8"))
 
-            f.write(b"\n")
+            f.write(b"\n") # Making sure playlists end uniformly w/ a newline character
     
-    # Optoinally, remove selected songs from the currently opened playlist
+    # optionally, remove selected songs from the currently opened playlist
     if input_playlist is not None:
-        print("This shouldn't be possible yet, what?")
-        fileName = (playlistsPath + "//" + input_playlist)
 
-        with open (fileName, "r+") as f: # this probably won't cut it. I'm going to read this file and then overwrite it with lines missing
-            print("Stuff here later")
-            # Read over everything
-            # skip lines containing a song from the selected songs array
-            # overwrite playlist with new output no longer containing selected songs
+        # Variables we only need if there's a valid input playlist
+        file_data = ""
+        fileName = (playlistsPath + "//" + input_playlist.text())
+        songs_to_remove = {f"..\\{song.text()}" for song in songs}
 
+        # Save the data of the current file
+        with open (fileName, "r") as f: # this probably won't cut it. I'm going to read this file and then overwrite it with lines missing
+            file_data = f.read()
 
+        # Scan over the saved file data and only save songs if not in "songs" var 
+        with open (fileName, "w") as f:
+            for line in file_data.splitlines():
+                if line.startswith("#") or line not in songs_to_remove:
+                    f.write(line + "\n")
 
-
-        # I guess we iterate over each playlist element and check if they're the current song? I assume we'll have less songs than playlist items selected in most cases so this is bad but shorter
-
-# def copy_to_playlist(self, selected_items):
-#     print("Songs are to be copied to playlist")
-#     if selected_items is not None:
-#         for i in selected_items:
-#             print(i.text())
-#     else: 
-#         print("ERROR: No items selected or something has gone wrong (line 313)")
 
 #generate a new playlist with it's own description
 # Global so that I can make this a dropdown menu option that also exists on basically every window
